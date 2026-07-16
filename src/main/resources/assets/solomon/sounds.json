@@ -1,0 +1,10 @@
+{
+  "sunrip": {
+    "subtitle": "solomon.subtitle.sunrip",
+    "sounds": [
+      {
+        "name": "solomon:sunrip"
+      }
+    ]
+  }
+}
