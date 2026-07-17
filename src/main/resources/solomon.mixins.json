@@ -7,7 +7,9 @@
     "client.ItemRendererMixin",
     "client.ModelBakeryMixin"
   ],
-  "mixins": [],
+  "mixins": [
+    "LivingEntityMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   }

@@ -44,7 +44,8 @@ public class SunBeamEffect {
     private float releaseEnvelope;
     private float releaseTargeting;
     private boolean finished;
-    private boolean damageSent;
+    private int pulsesSent;
+    private int nextPulseTick;
 
     public SunBeamEffect(Vec3 position) {
         this.position = position;
@@ -58,9 +59,15 @@ public class SunBeamEffect {
     public void tick() {
         this.ticks++;
         float now = this.time(0.0F);
-        // The eruption is the commit point: tell the server to apply the beam's damage
-        if (!this.damageSent && !this.finished && this.releaseTime < 0.0F && now >= GROW_START_SECONDS) {
-            this.damageSent = true;
+        // While the beam is erupting, fire a damage pulse every PULSE_INTERVAL_TICKS (one per tick).
+        // The sunrip damage type bypasses hurt-immunity, so the 50 damage drains smoothly across
+        // DAMAGE_PULSES hits and an entity only takes the full amount if it stays in the column for the
+        // whole beam. Beams cancelled during targeting (releaseTime set before the eruption) never
+        // pulse, so the releaseTime guard doubles as the "was it committed?" check.
+        if (!this.finished && this.releaseTime < 0.0F && now >= GROW_START_SECONDS
+                && this.pulsesSent < SunBeamDamagePayload.DAMAGE_PULSES && this.ticks >= this.nextPulseTick) {
+            this.pulsesSent++;
+            this.nextPulseTick = this.ticks + SunBeamDamagePayload.PULSE_INTERVAL_TICKS;
             PacketDistributor.sendToServer(new SunBeamDamagePayload(this.position));
         }
         if (now >= this.endTime()) {

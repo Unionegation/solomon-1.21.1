@@ -32,6 +32,13 @@ repositories {
         url = "https://api.modrinth.com/maven"
     }
     maven {
+        name = "CurseMaven"
+        url = "https://cursemaven.com"
+        content {
+            includeGroup "curse.maven"
+        }
+    }
+    maven {
         name = "Architectury"
         url = "https://maven.architectury.dev/"
     }
@@ -148,7 +155,10 @@ dependencies {
     // implementation project(":myproject")
 
     // Barched (spear base mod) - provides SpearItem and the Item.Properties spear bridge
-    implementation "maven.modrinth:barched:${barched_version}"
+    // Modrinth is currently down (500s), so we're pulling from Curse Maven instead.
+    // Swap back to the Modrinth coordinate below once api.modrinth.com recovers.
+    // implementation "maven.modrinth:barched:${barched_version}"
+    implementation "curse.maven:barched-1432818:8339807"
     // Required at runtime by Barched
     runtimeOnly "dev.architectury:architectury-neoforge:${architectury_version}"
     runtimeOnly "me.shedaniel.cloth:cloth-config-neoforge:${cloth_config_version}"

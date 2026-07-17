@@ -3,5 +3,10 @@
 
   "key.categories.solomon": "Solomon",
   "key.solomon.sun_beam": "Summon Sun Beam",
-  "solomon.subtitle.sunrip": "Sun beam tears through"
+  "solomon.subtitle.sunrip": "Sun beam tears through",
+
+  "_comment.sunrip_death": "Sun beam death messages: one is picked at random on death. %1$s = victim, %2$s = caster.",
+  "death.attack.sunrip.1": "%1$s was incinerated by Holy Light",
+  "death.attack.sunrip.2": "%1$s was consumed by the sun's fury",
+  "death.attack.sunrip.3": "%1$s became a sacrifice to the divine flames"
 }

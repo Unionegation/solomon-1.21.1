@@ -2,8 +2,10 @@ package dev.solomon.solomon;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
+import net.minecraft.world.damagesource.DamageType;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
@@ -34,6 +36,12 @@ public class Solomon {
 
     public static final DeferredHolder<SoundEvent, SoundEvent> SUNRIP_SOUND = SOUND_EVENTS.register("sunrip",
             () -> SoundEvent.createVariableRangeEvent(ResourceLocation.fromNamespaceAndPath(MODID, "sunrip")));
+
+    // Custom damage type for the sun beam, defined by the datapack file data/solomon/damage_type/sunrip.json.
+    // It replaces the old indirectMagic source so the sunrip can carry its own death messages
+    // (see SunBeamDamageSource); it is tagged bypasses_armor to keep the armor-ignoring magic behavior.
+    public static final ResourceKey<DamageType> SUNRIP_DAMAGE = ResourceKey.create(Registries.DAMAGE_TYPE,
+            ResourceLocation.fromNamespaceAndPath(MODID, "sunrip"));
 
     // Tier values copied from Paradise Lost's GLAZED_GOLD tool material, with gold ingots standing in
     // for golden amber as the repair item.
