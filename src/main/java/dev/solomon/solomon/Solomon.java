@@ -17,9 +17,14 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MobCategory;
+import net.neoforged.neoforge.common.DeferredSpawnEggItem;
 import net.neoforged.neoforge.common.SimpleTier;
+import dev.solomon.solomon.entity.SunDragon;
 import dev.solomon.solomon.network.SunBeamDamagePayload;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
+import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -33,6 +38,20 @@ public class Solomon {
 
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MODID);
     public static final DeferredRegister<SoundEvent> SOUND_EVENTS = DeferredRegister.create(Registries.SOUND_EVENT, MODID);
+    public static final DeferredRegister<EntityType<?>> ENTITY_TYPES = DeferredRegister.create(Registries.ENTITY_TYPE, MODID);
+
+    // Decorative multi-segment dragon; updateInterval(1) keeps the per-tick position sync smooth
+    // since the client rebuilds the body trail from the head's synced positions.
+    public static final DeferredHolder<EntityType<?>, EntityType<SunDragon>> SUN_DRAGON = ENTITY_TYPES.register("sun_dragon",
+            () -> EntityType.Builder.of(SunDragon::new, MobCategory.CREATURE)
+                    .sized(0.44F * SunDragon.MODEL_SCALE, 0.44F * SunDragon.MODEL_SCALE)
+                    .eyeHeight(0.22F * SunDragon.MODEL_SCALE)
+                    .clientTrackingRange(10)
+                    .updateInterval(1)
+                    .build("sun_dragon"));
+
+    public static final DeferredItem<DeferredSpawnEggItem> SUN_DRAGON_SPAWN_EGG = ITEMS.register("sun_dragon_spawn_egg",
+            () -> new DeferredSpawnEggItem(SUN_DRAGON, 0xF7C94C, 0xC96A1E, new Item.Properties()));
 
     public static final DeferredHolder<SoundEvent, SoundEvent> SUNRIP_SOUND = SOUND_EVENTS.register("sunrip",
             () -> SoundEvent.createVariableRangeEvent(ResourceLocation.fromNamespaceAndPath(MODID, "sunrip")));
@@ -70,8 +89,14 @@ public class Solomon {
     public Solomon(IEventBus modEventBus, ModContainer modContainer) {
         ITEMS.register(modEventBus);
         SOUND_EVENTS.register(modEventBus);
+        ENTITY_TYPES.register(modEventBus);
         modEventBus.addListener(this::addCreative);
         modEventBus.addListener(this::registerPayloads);
+        modEventBus.addListener(this::registerAttributes);
+    }
+
+    private void registerAttributes(EntityAttributeCreationEvent event) {
+        event.put(SUN_DRAGON.get(), SunDragon.createAttributes().build());
     }
 
     private void registerPayloads(RegisterPayloadHandlersEvent event) {
@@ -79,6 +104,9 @@ public class Solomon {
     }
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
+        if (event.getTabKey() == CreativeModeTabs.SPAWN_EGGS) {
+            event.accept(SUN_DRAGON_SPAWN_EGG);
+        }
         if (event.getTabKey() != CreativeModeTabs.COMBAT) return;
 
         // Barched adds its spears to the combat tab; slot the sun spear in after the golden spear.

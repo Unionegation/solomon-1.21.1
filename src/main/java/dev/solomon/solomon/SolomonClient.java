@@ -5,15 +5,20 @@ import java.util.List;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.solomon.solomon.client.SunBeamEffect;
+import dev.solomon.solomon.client.SunDragonModel;
+import dev.solomon.solomon.client.SunDragonRenderer;
+import dev.solomon.solomon.entity.SunDragon;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -39,12 +44,22 @@ public class SolomonClient {
 
     public SolomonClient(IEventBus modEventBus) {
         modEventBus.addListener(this::registerKeyMappings);
+        modEventBus.addListener(this::registerEntityRenderers);
+        modEventBus.addListener(this::registerLayerDefinitions);
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
         NeoForge.EVENT_BUS.addListener(this::onRenderLevelStage);
     }
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {
         event.register(SUN_BEAM_KEY);
+    }
+
+    private void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {
+        event.registerEntityRenderer(Solomon.SUN_DRAGON.get(), SunDragonRenderer::new);
+    }
+
+    private void registerLayerDefinitions(EntityRenderersEvent.RegisterLayerDefinitions event) {
+        event.registerLayerDefinition(SunDragonModel.LAYER, SunDragonModel::createBodyLayer);
     }
 
     private void onClientTick(ClientTickEvent.Post event) {
@@ -75,13 +90,29 @@ public class SolomonClient {
         this.beamKeyWasDown = down;
     }
 
+    // AFTER_WEATHER runs once water AND clouds have drawn (and written depth), so the depth-less
+    // additive sunrip/dragon light is properly occluded by both instead of being painted over.
     private void onRenderLevelStage(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS || this.activeBeams.isEmpty()) {
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_WEATHER) {
             return;
         }
+        Minecraft minecraft = Minecraft.getInstance();
         float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(true);
+        Vec3 cameraPos = event.getCamera().getPosition();
+
         for (SunBeamEffect beam : this.activeBeams) {
-            beam.render(event.getPoseStack(), event.getCamera().getPosition(), partialTick);
+            beam.render(event.getPoseStack(), cameraPos, partialTick);
+        }
+
+        // Sun dragons draw here rather than in the entity pass for the same depth-ordering reason;
+        // SunDragonRenderer's render() is left to the nametag default.
+        if (minecraft.level != null) {
+            for (Entity entity : minecraft.level.entitiesForRendering()) {
+                if (entity instanceof SunDragon dragon
+                        && minecraft.getEntityRenderDispatcher().getRenderer(dragon) instanceof SunDragonRenderer renderer) {
+                    renderer.renderGlow(dragon, event.getPoseStack(), cameraPos, partialTick);
+                }
+            }
         }
     }
 }

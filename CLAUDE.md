@@ -40,7 +40,25 @@ join it via [data/minecraft/tags/item/spears.json](src/main/resources/data/minec
 - **[SolomonClient.java](src/main/java/dev/solomon/solomon/SolomonClient.java)** — `@Mod(dist=CLIENT)`.
   Owns the `SUN_BEAM_KEY` keybind, the list of `activeBeams`, client tick + render hooks, and the
   in-hand/inventory `ModelResourceLocation`s. Pressing the key raycasts (range 64) and spawns a beam;
-  releasing during targeting cancels it.
+  releasing during targeting cancels it. Also registers the sun dragon renderer + model layer.
+- **entity/[SunDragon.java](src/main/java/dev/solomon/solomon/entity/SunDragon.java)** — decorative
+  multi-segment Chinese dragon (`solomon:sun_dragon`, spawn egg in the spawn-eggs tab). Server flies
+  the single head entity along a layered-sine curl around its spawn anchor (anchor + `curlTime`
+  persisted in NBT); both sides record a per-tick position ring buffer (`TRAIL_LENGTH = 128`) that
+  `getTrailPoint` samples smoothly.
+- **client/[SunDragonModel.java](src/main/java/dev/solomon/solomon/client/SunDragonModel.java)** &
+  **[SunDragonRenderer.java](src/main/java/dev/solomon/solomon/client/SunDragonRenderer.java)** —
+  head + one reusable body-cube part (authored **+Y-up/+Z-forward**, no vanilla model flip); renderer
+  strings the tapering body segments along the trail by arc length, oriented to the trail tangent.
+  Rendered in the sunrip's visual language: an alpha-blended gold base pass (custom depth-writing
+  POSITION_COLOR render type, keeps the yellow visible against the sky) under three nested additive
+  `RenderType.dragonRays()` glow shells (small white core / gold / faint orange halo) with the
+  beam's two-sine shimmer — a `QuadsToTriangles` adapter re-emits ModelPart quads as position+color
+  triangles. Drawn via `renderGlow(...)` from SolomonClient's **AFTER_WEATHER** stage handler (same
+  as the beam, so water/clouds occlude the depth-less light correctly), NOT from the entity
+  renderer's `render()`, which is left to the nametag default. Size/layout constants (`SCALE`,
+  `BODY_SEGMENTS`, spacing, taper) live on `SunDragon` so the model, hitbox, curl path, and culling
+  box all scale together. Entity type uses `updateInterval(1)` so the client trail stays smooth.
 - **client/[SunBeamEffect.java](src/main/java/dev/solomon/solomon/client/SunBeamEffect.java)** — one
   beam instance: sound-driven envelope (attack/sustain/fade timed to `sunrip.ogg`, 7.931s), the
   `dragonRays` shell rendering, and **the damage-pulse sender** (see flow below).
@@ -85,8 +103,9 @@ Delivery is reliable, so full-duration presence gives exactly 50.
   (change the count → also update `MESSAGE_VARIANTS` in `SunBeamDamageSource`).
 
 ## Resources (`src/main/resources/`)
-- `assets/solomon/` — `lang/en_us.json`, item models (`sun_spear`, `sun_spear_in_hand`), textures,
-  `sounds.json` + `sounds/sunrip.ogg`.
+- `assets/solomon/` — `lang/en_us.json`, item models (`sun_spear`, `sun_spear_in_hand`,
+  `sun_dragon_spawn_egg`), textures (incl. procedurally generated
+  `textures/entity/sun_dragon.png` gold-scale skin), `sounds.json` + `sounds/sunrip.ogg`.
 - `data/solomon/damage_type/sunrip.json` — the custom damage type.
 - `data/minecraft/tags/damage_type/{bypasses_cooldown,bypasses_armor,no_knockback}.json` — merge
   `solomon:sunrip` into vanilla tags (`replace:false`).
