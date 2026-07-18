@@ -36,7 +36,8 @@ join it via [data/minecraft/tags/item/spears.json](src/main/resources/data/minec
 ## Source map (`src/main/java/dev/solomon/solomon/`)
 - **[Solomon.java](src/main/java/dev/solomon/solomon/Solomon.java)** — main `@Mod` (common). Registers
   the `SUN_SPEAR` item, `SUNRIP_SOUND`, the `SUNRIP_DAMAGE` `ResourceKey<DamageType>`, the network
-  payload, and the creative-tab insertion. Holds the spear `Tier`/attributes.
+  payloads, the creative-tab insertion, and `SunBeamManager`'s game-bus listeners (server tick +
+  server stopped). Holds the spear `Tier`/attributes.
 - **[SolomonClient.java](src/main/java/dev/solomon/solomon/SolomonClient.java)** — `@Mod(dist=CLIENT)`.
   Owns the `SUN_BEAM_KEY` keybind, the list of `activeBeams`, client tick + render hooks, and the
   in-hand/inventory `ModelResourceLocation`s. Pressing the key raycasts (range 64) and spawns a beam;
@@ -63,8 +64,9 @@ join it via [data/minecraft/tags/item/spears.json](src/main/resources/data/minec
   the head corkscrews around the straight caster→target line (`HELIX_RADIUS`/`HELIX_AXIAL_SPEED`/
   `HELIX_ANGULAR_SPEED`/`HELIX_RAMP`, all SCALE-derived; radius ramps 0→full→0 so it leaves the
   caster and converges exactly onto the target), overshoots straight past the target until the tail
-  arrives (`BODY_LENGTH`), then discards itself; helix state persisted in NBT. Both sides record a
-  per-tick position ring buffer (`TRAIL_LENGTH = 256`) that `getTrailPoint` samples smoothly.
+  arrives (`BODY_LENGTH`), then discards itself; helix state persisted in NBT. The client records a
+  per-tick position ring buffer (`TRAIL_LENGTH = 256`) that `getTrailPoint` samples smoothly (the
+  server never reads the trail, so it skips the bookkeeping).
 - **client/[SunDragonModel.java](src/main/java/dev/solomon/solomon/client/SunDragonModel.java)** &
   **[SunDragonRenderer.java](src/main/java/dev/solomon/solomon/client/SunDragonRenderer.java)** —
   head + one reusable body-cube part (authored **+Y-up/+Z-forward**, no vanilla model flip); renderer
@@ -83,16 +85,21 @@ join it via [data/minecraft/tags/item/spears.json](src/main/resources/data/minec
   box all scale together. Entity type uses `updateInterval(1)` so the client trail stays smooth.
 - **client/[SunBeamEffect.java](src/main/java/dev/solomon/solomon/client/SunBeamEffect.java)** — one
   beam instance: sound-driven envelope (attack/sustain/fade timed to `sunrip.ogg`, 7.931s), the
-  `dragonRays` shell rendering, and **the damage-pulse sender** (see flow below).
-- **network/[SunBeamDamagePayload.java](src/main/java/dev/solomon/solomon/network/SunBeamDamagePayload.java)**
-  — `CustomPacketPayload` client→server. Server-side `handle` damages living entities in the beam
-  column. Owns damage constants (`TOTAL_DAMAGE`, `DAMAGE_PULSES`, `PULSE_INTERVAL_TICKS`,
-  `DAMAGE_PER_PULSE`) and the column geometry (`RADIUS`/`BOTTOM`/`HEIGHT`).
+  `dragonRays` shell rendering, and the **one-shot eruption send** — `SunBeamStartPayload` fired
+  exactly once when the beam erupts (see flow below).
+- **network/[SunBeamStartPayload.java](src/main/java/dev/solomon/solomon/network/SunBeamStartPayload.java)**
+  — `CustomPacketPayload` client→server, sent once per beam at eruption; `handle` just forwards to
+  `SunBeamManager.startBeam`.
+- **server/[SunBeamManager.java](src/main/java/dev/solomon/solomon/server/SunBeamManager.java)** —
+  server-authoritative damage schedule: validates the start (holding spear, distance sane), then on
+  `ServerTickEvent.Post` runs each active beam's pulses itself. Owns the damage constants
+  (`TOTAL_DAMAGE`, `DAMAGE_PULSES`, `PULSE_INTERVAL_TICKS`, `DAMAGE_PER_PULSE`) and the column
+  geometry (`RADIUS`/`BOTTOM`/`HEIGHT`). Clears all beams on `ServerStoppedEvent`.
 - **network/[SunDragonAttackPayload.java](src/main/java/dev/solomon/solomon/network/SunDragonAttackPayload.java)**
   — `CustomPacketPayload` client→server for the dragon attack (client `SUN_DRAGON_KEY`, default G,
   raycasts a target like the beam). Server validates (holding spear, distance sane) and spawns a
   `SunDragon` at the caster's eyes in helix-attack mode. No damage yet — purely visual.
-- **network/[SunBeamDamageSource.java](src/main/java/dev/solomon/solomon/network/SunBeamDamageSource.java)**
+- **server/[SunBeamDamageSource.java](src/main/java/dev/solomon/solomon/server/SunBeamDamageSource.java)**
   — `DamageSource` subclass; overrides `getLocalizedDeathMessage` to pick one of three random death
   messages (`death.attack.sunrip.1..3`; `%1$s`=victim, `%2$s`=caster).
 - **mixin/[LivingEntityMixin.java](src/main/java/dev/solomon/solomon/mixin/LivingEntityMixin.java)**
@@ -109,25 +116,32 @@ join it via [data/minecraft/tags/item/spears.json](src/main/resources/data/minec
 
 ## Sun beam feature flow (how damage works)
 1. Client keybind → `SunBeamEffect` spawns, plays `sunrip.ogg`, renders the pillar.
-2. At eruption (`now >= GROW_START`, ~0.6s) the effect begins firing `SunBeamDamagePayload` — **one
-   pulse per game tick** (`PULSE_INTERVAL_TICKS = 1`, `DAMAGE_PULSES = 146` ≈ the ~7.3s erupted
-   window). Cancelling during targeting means it never erupts, so it never pulses.
-3. Server `handle` validates (holding spear, position sane), then damages each `LivingEntity` inside
-   the column (`RADIUS = 3`) for `DAMAGE_PER_PULSE = 50/146`. Full presence ⇒ exactly **50** total.
+2. At eruption (`now >= GROW_START`, ~0.6s) the effect sends **one** `SunBeamStartPayload`.
+   Cancelling during targeting means it never erupts, so it never sends.
+3. Server `SunBeamManager` validates the start (holding spear, position sane), then runs the whole
+   schedule itself on `ServerTickEvent.Post`: **one pulse per game tick** (`PULSE_INTERVAL_TICKS = 1`,
+   `DAMAGE_PULSES = 146` ≈ the ~7.3s erupted window), each pulse damaging every `LivingEntity` inside
+   the column (`RADIUS = 3`) for `DAMAGE_PER_PULSE = 150/146`. Full presence ⇒ exactly **150** total.
+   Each pulse re-validates the caster (online, same dimension, holding spear, within range); a failed
+   check skips that pulse but the schedule keeps running (re-equipping the spear resumes damage);
+   a disconnected caster cancels the beam.
 4. The `solomon:sunrip` damage type ([data/solomon/damage_type/sunrip.json](src/main/resources/data/solomon/damage_type/sunrip.json))
    is tagged into three vanilla damage-type tags:
    - `bypasses_cooldown` → **ignores hurt-immunity i-frames**, so it can tick every game tick smoothly.
    - `bypasses_armor` → preserves the old indirect-magic armor-ignoring behavior.
    - `no_knockback` → so per-tick hits don't fling targets out of the fixed column.
 
-**Design is deliberately client-authoritative** ("the client is the commit point"): the client owns
-beam position, timing, eruption, and pulse cadence; the server only validates and applies damage.
-Delivery is reliable, so full-duration presence gives exactly 50.
+**Authority split**: the client owns the *cosmetics and the trigger* (beam position via raycast,
+eruption timing, visuals, sound); the server owns *all damage* (cadence, amount, duration,
+per-pulse validation). A modified client can therefore only choose where/when to start a beam —
+never how much damage it deals. The dragon attack follows the same pattern (client raycasts,
+server spawns and flies the entity).
 
 ### Tuning knobs
 - Damage total / cadence: `TOTAL_DAMAGE`, `DAMAGE_PULSES`, `PULSE_INTERVAL_TICKS` in
-  `SunBeamDamagePayload` (keep `DAMAGE_PULSES ≈ windowTicks / PULSE_INTERVAL_TICKS` so the total stays 50).
-- Column size: `RADIUS`/`BOTTOM`/`HEIGHT` in the payload (must match the visuals in `SunBeamEffect`).
+  `SunBeamManager` (keep `DAMAGE_PULSES ≈ windowTicks / PULSE_INTERVAL_TICKS` so the total stays
+  `TOTAL_DAMAGE`).
+- Column size: `RADIUS`/`BOTTOM`/`HEIGHT` in `SunBeamManager` (must match the visuals in `SunBeamEffect`).
 - Non-player hurt-sound rate: `SUNRIP_HURT_SOUND_INTERVAL` in `LivingEntityMixin`.
 - Death messages: `death.attack.sunrip.1..3` in [en_us.json](src/main/resources/assets/solomon/lang/en_us.json)
   (change the count → also update `MESSAGE_VARIANTS` in `SunBeamDamageSource`).
@@ -135,7 +149,8 @@ Delivery is reliable, so full-duration presence gives exactly 50.
 ## Resources (`src/main/resources/`)
 - `assets/solomon/` — `lang/en_us.json`, item models (`sun_spear`, `sun_spear_in_hand`,
   `sun_dragon_spawn_egg`), textures (incl. procedurally generated
-  `textures/entity/sun_dragon.png` gold-scale skin), `sounds.json` + `sounds/sunrip.ogg`.
+  `textures/entity/sun_dragon.png` gold-scale skin), `sounds.json` + `sounds/sunrip.ogg` +
+  `sounds/sundragonlaunch.ogg` (played server-side at the caster on dragon launch).
 - `data/solomon/damage_type/sunrip.json` — the custom damage type.
 - `data/minecraft/tags/damage_type/{bypasses_cooldown,bypasses_armor,no_knockback}.json` — merge
   `solomon:sunrip` into vanilla tags (`replace:false`).
@@ -143,4 +158,3 @@ Delivery is reliable, so full-duration presence gives exactly 50.
 - `data/{minecraft,c}/tags/item/...` — misc item tags (piglin_loved, melee weapons).
 - `solomon.mixins.json` — mixin config: `client` = the two model mixins + `LevelRendererMixin`
   (pre-water depth capture for the sunlight effects); `mixins` = `LivingEntityMixin`.
-```

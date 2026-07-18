@@ -12,9 +12,9 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * Decorative Chinese-dragon-style serpent. The server flies the single entity (which is just the
- * head) along a layered-sine curl around its spawn point; every tick both sides record the head
- * position into a ring-buffer trail, and {@code SunDragonRenderer} strings the body segments along
- * that trail by arc length so the body follows the head exactly like a snake.
+ * head) along a layered-sine curl around its spawn point; every tick the client records the synced
+ * head position into a ring-buffer trail, and {@code SunDragonRenderer} strings the body segments
+ * along that trail by arc length so the body follows the head exactly like a snake.
  */
 public class SunDragon extends Mob {
     /**
@@ -52,7 +52,7 @@ public class SunDragon extends Mob {
     // line, spiraling in to hit the target exactly (radius ramps 0→full→0 along the line).
     public static final double HELIX_RADIUS = 0.9 * SCALE;
     /** Blocks advanced along the caster→target axis per tick. */
-    public static final double HELIX_AXIAL_SPEED = 0.16 * SCALE;
+    public static final double HELIX_AXIAL_SPEED = 0.08 * SCALE;
     /** Radians swept around the axis per tick. */
     public static final double HELIX_ANGULAR_SPEED = 0.22;
     /** Axial distance over which the helix radius ramps in at the caster / out at the target. */
@@ -189,16 +189,19 @@ public class SunDragon extends Mob {
             }
         }
 
-        // Record the (server-authoritative or client-lerped) head position into the trail.
-        Vec3 pos = this.position();
-        if (this.trailHead < 0) {
-            for (int i = 0; i < TRAIL_LENGTH; i++) {
-                this.trail[i] = pos;
+        // Record the head position into the trail. Only the renderer ever reads it, so the
+        // server skips the bookkeeping entirely.
+        if (this.level().isClientSide) {
+            Vec3 pos = this.position();
+            if (this.trailHead < 0) {
+                for (int i = 0; i < TRAIL_LENGTH; i++) {
+                    this.trail[i] = pos;
+                }
+                this.trailHead = 0;
+            } else {
+                this.trailHead = (this.trailHead + 1) % TRAIL_LENGTH;
+                this.trail[this.trailHead] = pos;
             }
-            this.trailHead = 0;
-        } else {
-            this.trailHead = (this.trailHead + 1) % TRAIL_LENGTH;
-            this.trail[this.trailHead] = pos;
         }
     }
 

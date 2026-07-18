@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-// The sunrip damage bypasses hurt-immunity and ticks every game tick (see SunBeamDamagePayload), which
+// The sunrip damage bypasses hurt-immunity and ticks every game tick (see SunBeamManager), which
 // makes the vanilla hurt sound machine-gun. Players keep that per-tick feedback; for every other living
 // entity the sunrip hurt sound is thinned to once every SUNRIP_HURT_SOUND_INTERVAL ticks, so a mob
 // burning in the beam still grunts periodically instead of continuously. Only the sunrip source is

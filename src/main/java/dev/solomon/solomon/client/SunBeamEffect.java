@@ -3,7 +3,7 @@ package dev.solomon.solomon.client;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.solomon.solomon.Solomon;
-import dev.solomon.solomon.network.SunBeamDamagePayload;
+import dev.solomon.solomon.network.SunBeamStartPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -44,8 +44,7 @@ public class SunBeamEffect {
     private float releaseEnvelope;
     private float releaseTargeting;
     private boolean finished;
-    private int pulsesSent;
-    private int nextPulseTick;
+    private boolean eruptionSent;
 
     public SunBeamEffect(Vec3 position) {
         this.position = position;
@@ -59,16 +58,13 @@ public class SunBeamEffect {
     public void tick() {
         this.ticks++;
         float now = this.time(0.0F);
-        // While the beam is erupting, fire a damage pulse every PULSE_INTERVAL_TICKS (one per tick).
-        // The sunrip damage type bypasses hurt-immunity, so the 50 damage drains smoothly across
-        // DAMAGE_PULSES hits and an entity only takes the full amount if it stays in the column for the
-        // whole beam. Beams cancelled during targeting (releaseTime set before the eruption) never
-        // pulse, so the releaseTime guard doubles as the "was it committed?" check.
-        if (!this.finished && this.releaseTime < 0.0F && now >= GROW_START_SECONDS
-                && this.pulsesSent < SunBeamDamagePayload.DAMAGE_PULSES && this.ticks >= this.nextPulseTick) {
-            this.pulsesSent++;
-            this.nextPulseTick = this.ticks + SunBeamDamagePayload.PULSE_INTERVAL_TICKS;
-            PacketDistributor.sendToServer(new SunBeamDamagePayload(this.position));
+        // At eruption, hand the beam to the server exactly once: SunBeamManager runs the whole
+        // damage schedule server-side from here. Beams cancelled during targeting (releaseTime set
+        // before the eruption) never send it, so the releaseTime guard doubles as the "was it
+        // committed?" check.
+        if (!this.finished && !this.eruptionSent && this.releaseTime < 0.0F && now >= GROW_START_SECONDS) {
+            this.eruptionSent = true;
+            PacketDistributor.sendToServer(new SunBeamStartPayload(this.position));
         }
         if (now >= this.endTime()) {
             this.discard();

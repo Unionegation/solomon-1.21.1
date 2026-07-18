@@ -22,8 +22,10 @@ import net.minecraft.world.entity.MobCategory;
 import net.neoforged.neoforge.common.DeferredSpawnEggItem;
 import net.neoforged.neoforge.common.SimpleTier;
 import dev.solomon.solomon.entity.SunDragon;
-import dev.solomon.solomon.network.SunBeamDamagePayload;
+import dev.solomon.solomon.network.SunBeamStartPayload;
 import dev.solomon.solomon.network.SunDragonAttackPayload;
+import dev.solomon.solomon.server.SunBeamManager;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -97,6 +99,9 @@ public class Solomon {
         modEventBus.addListener(this::addCreative);
         modEventBus.addListener(this::registerPayloads);
         modEventBus.addListener(this::registerAttributes);
+        // Game-bus (server-side) hooks: SunBeamManager runs the sun beam's damage schedule.
+        NeoForge.EVENT_BUS.addListener(SunBeamManager::onServerTick);
+        NeoForge.EVENT_BUS.addListener(SunBeamManager::onServerStopped);
     }
 
     private void registerAttributes(EntityAttributeCreationEvent event) {
@@ -104,8 +109,8 @@ public class Solomon {
     }
 
     private void registerPayloads(RegisterPayloadHandlersEvent event) {
-        event.registrar("1")
-                .playToServer(SunBeamDamagePayload.TYPE, SunBeamDamagePayload.STREAM_CODEC, SunBeamDamagePayload::handle)
+        event.registrar("2")
+                .playToServer(SunBeamStartPayload.TYPE, SunBeamStartPayload.STREAM_CODEC, SunBeamStartPayload::handle)
                 .playToServer(SunDragonAttackPayload.TYPE, SunDragonAttackPayload.STREAM_CODEC, SunDragonAttackPayload::handle);
     }
 
