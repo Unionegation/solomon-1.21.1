@@ -13,7 +13,6 @@ import dev.solomon.solomon.entity.SunDragon;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
@@ -30,10 +29,13 @@ import net.minecraft.world.phys.Vec3;
  * {@link RenderType#dragonRays()} shells — a small near-white core, a gold mid shell, and a faint
  * orange halo. Unlike the beam, the dragon does not shimmer: it holds a steady glow.
  *
- * The glow is NOT drawn from {@link #render}: none of these passes write depth except the base
- * body, and the entity pass runs before water/clouds, which would then paint over the light.
- * Instead {@code SolomonClient} calls {@link #renderGlow} during the AFTER_WEATHER level stage
- * (same pattern as the beam), when water and clouds have already drawn and written depth.
+ * Nothing is drawn from {@link #render}: none of these passes write depth, and the entity pass
+ * runs before water/clouds, which would then paint over the light. Instead {@code SolomonClient}
+ * drives {@link #renderBody} and {@link #renderGlow} during the AFTER_LEVEL stage (same pattern
+ * as the beam), in a strict global order: every dragon's translucent gold body first, then
+ * every additive pass (the sunrip's shells and the dragons' glow). Additive blending commutes, so
+ * once all the alpha-blended gold is down, no additive light can end up buried "beneath" a body —
+ * which is exactly what happened when the beam's white core drew before a dragon's body.
  *
  * Placement: the head at the entity's position plus {@link SunDragon#BODY_SEGMENTS} body cubes
  * strung back along the position trail by arc length, each oriented to the trail tangent so the
@@ -81,11 +83,55 @@ public class SunDragonRenderer extends EntityRenderer<SunDragon> {
         this.body = model.body;
     }
 
-    // The default render() (nametag only) is inherited; the body is drawn by renderGlow below,
-    // called from SolomonClient's AFTER_WEATHER stage handler.
+    // The default render() (nametag only) is inherited; the body and glow are drawn by
+    // renderBody/renderGlow below, called from SolomonClient's AFTER_WEATHER stage handler.
 
-    /** Draws the whole dragon, camera-relative. Called once per frame per dragon from SolomonClient. */
+    /** Render type of the body pass, exposed so SolomonClient can flush it before any additive light. */
+    public static RenderType bodyRenderType() {
+        return DragonRenderTypes.SUN_DRAGON_BODY;
+    }
+
+    /** A frame's resolved geometry: camera-relative head position plus every segment placement. */
+    private record Layout(Vec3 headPos, List<Placement> placements) {}
+
+    /**
+     * The alpha-blended gold body pass. Buffers into {@link #bodyRenderType()}; the caller flushes
+     * that batch (for every dragon at once) before any additive pass is buffered.
+     */
+    public void renderBody(SunDragon dragon, PoseStack poseStack, Vec3 cameraPos, float partialTick) {
+        Layout layout = this.computeLayout(dragon, partialTick);
+        QuadsToTriangles buffer = new QuadsToTriangles(
+                Minecraft.getInstance().renderBuffers().bufferSource().getBuffer(DragonRenderTypes.SUN_DRAGON_BODY));
+        poseStack.pushPose();
+        poseStack.translate(layout.headPos.x - cameraPos.x, layout.headPos.y - cameraPos.y,
+                layout.headPos.z - cameraPos.z);
+        for (Placement p : layout.placements) {
+            renderSegment(poseStack, buffer, p, BASE_PASS);
+        }
+        poseStack.popPose();
+    }
+
+    /**
+     * The nested additive glow shells, buffered into {@link RenderType#dragonRays()} alongside the
+     * sunrip's shells; the caller flushes that batch after every dragon and beam has buffered.
+     */
     public void renderGlow(SunDragon dragon, PoseStack poseStack, Vec3 cameraPos, float partialTick) {
+        Layout layout = this.computeLayout(dragon, partialTick);
+        QuadsToTriangles buffer = new QuadsToTriangles(
+                Minecraft.getInstance().renderBuffers().bufferSource().getBuffer(RenderType.dragonRays()));
+        poseStack.pushPose();
+        poseStack.translate(layout.headPos.x - cameraPos.x, layout.headPos.y - cameraPos.y,
+                layout.headPos.z - cameraPos.z);
+        for (GlowPass pass : GLOW_PASSES) {
+            for (Placement p : layout.placements) {
+                renderSegment(poseStack, buffer, p, pass);
+            }
+        }
+        poseStack.popPose();
+    }
+
+    /** Resolves the head plus body-segment placements along the trail for this frame. */
+    private Layout computeLayout(SunDragon dragon, float partialTick) {
         Vec3[] points = new Vec3[SunDragon.TRAIL_LENGTH - 1];
         for (int k = 0; k < points.length; k++) {
             points[k] = dragon.getTrailPoint(k, partialTick);
@@ -114,28 +160,7 @@ public class SunDragonRenderer extends EntityRenderer<SunDragon> {
             target += SunDragon.SEGMENT_SPACING * taper;
         }
 
-        MultiBufferSource.BufferSource bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
-        poseStack.pushPose();
-        poseStack.translate(headPos.x - cameraPos.x, headPos.y - cameraPos.y, headPos.z - cameraPos.z);
-
-        // Base body first: it writes depth, so the additive shells drawn after can't shine
-        // through the solid body, and later frames' water/clouds already occlude correctly.
-        QuadsToTriangles baseBuffer = new QuadsToTriangles(bufferSource.getBuffer(DragonRenderTypes.SUN_DRAGON_BODY));
-        for (Placement p : placements) {
-            renderSegment(poseStack, baseBuffer, p, BASE_PASS);
-        }
-
-        // Requesting a different render type from the BufferSource flushes the base batch,
-        // keeping base-under-glow draw order.
-        QuadsToTriangles glowBuffer = new QuadsToTriangles(bufferSource.getBuffer(RenderType.dragonRays()));
-        for (GlowPass pass : GLOW_PASSES) {
-            for (Placement p : placements) {
-                renderSegment(poseStack, glowBuffer, p, pass);
-            }
-        }
-
-        poseStack.popPose();
-        bufferSource.endBatch(RenderType.dragonRays());
+        return new Layout(headPos, placements);
     }
 
     private static void renderSegment(PoseStack poseStack, QuadsToTriangles buffer, Placement placement,
@@ -170,9 +195,12 @@ public class SunDragonRenderer extends EntityRenderer<SunDragon> {
     }
 
     /**
-     * Home of the base-body render type: position+color triangles with regular alpha blending and
-     * depth write (builder defaults), unlike the depth-less additive dragonRays. Sorted on upload
-     * so overlapping translucent segments blend in a stable order.
+     * Home of the base-body render type: position+color triangles with regular alpha blending,
+     * depth-tested but explicitly NOT depth-writing (COLOR_WRITE). Skipping the depth write is what
+     * lets the additive glow — including the white core nested inside the body — shine through the
+     * gold instead of being z-culled by it; it also matches the weather stage, where vanilla holds
+     * the global depth mask off anyway. Sorted on upload so overlapping translucent segments blend
+     * in a stable order.
      */
     private static final class DragonRenderTypes extends RenderType {
         private DragonRenderTypes(String name, VertexFormat format, VertexFormat.Mode mode, int bufferSize,
@@ -185,6 +213,7 @@ public class SunDragonRenderer extends EntityRenderer<SunDragon> {
                 CompositeState.builder()
                         .setShaderState(POSITION_COLOR_SHADER)
                         .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                        .setWriteMaskState(COLOR_WRITE)
                         .createCompositeState(false));
     }
 

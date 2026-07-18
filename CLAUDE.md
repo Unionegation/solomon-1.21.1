@@ -41,6 +41,21 @@ join it via [data/minecraft/tags/item/spears.json](src/main/resources/data/minec
   Owns the `SUN_BEAM_KEY` keybind, the list of `activeBeams`, client tick + render hooks, and the
   in-hand/inventory `ModelResourceLocation`s. Pressing the key raycasts (range 64) and spawns a beam;
   releasing during targeting cancels it. Also registers the sun dragon renderer + model layer.
+  **Owns the sunlight depth trick**: `captureSunlightDepth()` (static, called by
+  `LevelRendererMixin` right before the translucent/water chunk layer renders) blits the bound
+  framebuffer's depth — terrain, entities, players, solid particles, **including Iris's batched
+  entity geometry**, which flushes only after `AFTER_BLOCK_ENTITIES`, hence the mixin instead of
+  that event — into a `preWaterDepth` snapshot target (falling back to the main target when
+  Fabulous leaves FBO 0 bound there). The effects draw at **`AFTER_LEVEL`** (GameRenderer, after
+  renderLevel fully returns — i.e. after the Fabulous transparency composite and any Veil/Iris
+  renderLevel-tail hooks, so nothing can composite water/clouds over the light), after blitting the
+  snapshot back over the bound framebuffer's depth. Terrain/entities occlude the light; water and
+  clouds never do. No depth restore: vanilla clears depth for hand rendering right after the event.
+  If a blit fails (format mismatch under exotic pipelines) it silently no-ops and the draw falls
+  back to the live depth buffer. `AFTER_LEVEL` supplies an identity pose stack, so the handler
+  multiplies `event.getModelViewMatrix()` into it before rendering. Draw order is strict: all
+  dragon gold bodies (translucent) first, then all additive light (beam shells + dragon glows) —
+  additive commutes, so nothing can bury light "beneath" a body.
 - **entity/[SunDragon.java](src/main/java/dev/solomon/solomon/entity/SunDragon.java)** — decorative
   multi-segment Chinese dragon (`solomon:sun_dragon`, spawn egg in the spawn-eggs tab). Server flies
   the single head entity along a layered-sine curl around its spawn anchor (anchor + `curlTime`
@@ -50,13 +65,16 @@ join it via [data/minecraft/tags/item/spears.json](src/main/resources/data/minec
   **[SunDragonRenderer.java](src/main/java/dev/solomon/solomon/client/SunDragonRenderer.java)** —
   head + one reusable body-cube part (authored **+Y-up/+Z-forward**, no vanilla model flip); renderer
   strings the tapering body segments along the trail by arc length, oriented to the trail tangent.
-  Rendered in the sunrip's visual language: an alpha-blended gold base pass (custom depth-writing
-  POSITION_COLOR render type, keeps the yellow visible against the sky) under three nested additive
-  `RenderType.dragonRays()` glow shells (small white core / gold / faint orange halo) with the
-  beam's two-sine shimmer — a `QuadsToTriangles` adapter re-emits ModelPart quads as position+color
-  triangles. Drawn via `renderGlow(...)` from SolomonClient's **AFTER_WEATHER** stage handler (same
-  as the beam, so water/clouds occlude the depth-less light correctly), NOT from the entity
-  renderer's `render()`, which is left to the nametag default. Size/layout constants (`SCALE`,
+  Rendered in the sunrip's visual language: an alpha-blended gold base pass (custom POSITION_COLOR
+  render type, depth-tested but explicitly **non-depth-writing** so the glow — including the white
+  core nested inside the body — shines through instead of being z-culled; keeps the yellow visible
+  against the sky) under three nested additive `RenderType.dragonRays()` glow shells (small white
+  core / gold / faint orange halo) with the beam's two-sine shimmer — a `QuadsToTriangles` adapter
+  re-emits ModelPart quads as position+color triangles. Split into `renderBody(...)` /
+  `renderGlow(...)`, both driven by SolomonClient's **AFTER_LEVEL** stage handler (bodies for all
+  dragons first, then all additive light; batches flushed by the caller), NOT from the entity
+  renderer's `render()`, which is left to the nametag default. Occlusion comes from SolomonClient's
+  pre-water depth snapshot (see above): terrain hides the dragon, water/clouds don't. Size/layout constants (`SCALE`,
   `BODY_SEGMENTS`, spacing, taper) live on `SunDragon` so the model, hitbox, curl path, and culling
   box all scale together. Entity type uses `updateInterval(1)` so the client trail stays smooth.
 - **client/[SunBeamEffect.java](src/main/java/dev/solomon/solomon/client/SunBeamEffect.java)** — one
@@ -76,6 +94,10 @@ join it via [data/minecraft/tags/item/spears.json](src/main/resources/data/minec
   & **[ModelBakeryMixin.java](src/main/java/dev/solomon/solomon/mixin/client/ModelBakeryMixin.java)** —
   replicate Barched's flat-sprite ↔ in-hand-model swap and explicit in-hand model load, for our item
   (see Barched gotcha above). Priority 900.
+- **mixin/client/[LevelRendererMixin.java](src/main/java/dev/solomon/solomon/mixin/client/LevelRendererMixin.java)** —
+  injects at `popPush("translucent")` in `renderLevel` (both Fabulous and normal branches) and calls
+  `SolomonClient.captureSunlightDepth()` — the only spot where all opaque depth (incl. Iris-batched
+  entities) is flushed but water hasn't rendered.
 
 ## Sun beam feature flow (how damage works)
 1. Client keybind → `SunBeamEffect` spawns, plays `sunrip.ogg`, renders the pillar.
@@ -111,5 +133,6 @@ Delivery is reliable, so full-duration presence gives exactly 50.
   `solomon:sunrip` into vanilla tags (`replace:false`).
 - `data/minecraft/tags/item/spears.json` — adds `sun_spear` to Barched's `minecraft:spears` tag.
 - `data/{minecraft,c}/tags/item/...` — misc item tags (piglin_loved, melee weapons).
-- `solomon.mixins.json` — mixin config: `client` = the two model mixins; `mixins` = `LivingEntityMixin`.
+- `solomon.mixins.json` — mixin config: `client` = the two model mixins + `LevelRendererMixin`
+  (pre-water depth capture for the sunlight effects); `mixins` = `LivingEntityMixin`.
 ```
