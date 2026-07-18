@@ -8,6 +8,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
@@ -50,5 +51,8 @@ public record SunDragonAttackPayload(Vec3 target) implements CustomPacketPayload
         }
         dragon.startHelixAttack(player.getEyePosition(), target);
         player.serverLevel().addFreshEntity(dragon);
+        // Variable-range event: volume > 1 extends how far the roar carries, fitting the dragon's size.
+        player.serverLevel().playSound(null, player.getX(), player.getY(), player.getZ(),
+                Solomon.SUN_DRAGON_LAUNCH_SOUND.get(), SoundSource.PLAYERS, 3.0F, 1.0F);
     }
 }

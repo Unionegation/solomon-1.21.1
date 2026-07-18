@@ -7,6 +7,7 @@
   "key.solomon.sun_beam": "Summon Sun Beam",
   "key.solomon.sun_dragon_attack": "Sun Dragon Strike",
   "solomon.subtitle.sunrip": "Sun beam tears through",
+  "solomon.subtitle.sundragonlaunch": "Sun dragon roars forth",
 
   "_comment.sunrip_death": "Sun beam death messages: one is picked at random on death. %1$s = victim, %2$s = caster.",
   "death.attack.sunrip.1": "%1$s was incinerated by Holy Light",

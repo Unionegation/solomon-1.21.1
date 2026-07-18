@@ -57,6 +57,9 @@ public class Solomon {
     public static final DeferredHolder<SoundEvent, SoundEvent> SUNRIP_SOUND = SOUND_EVENTS.register("sunrip",
             () -> SoundEvent.createVariableRangeEvent(ResourceLocation.fromNamespaceAndPath(MODID, "sunrip")));
 
+    public static final DeferredHolder<SoundEvent, SoundEvent> SUN_DRAGON_LAUNCH_SOUND = SOUND_EVENTS.register("sundragonlaunch",
+            () -> SoundEvent.createVariableRangeEvent(ResourceLocation.fromNamespaceAndPath(MODID, "sundragonlaunch")));
+
     // Custom damage type for the sun beam, defined by the datapack file data/solomon/damage_type/sunrip.json.
     // It replaces the old indirectMagic source so the sunrip can carry its own death messages
     // (see SunBeamDamageSource); it is tagged bypasses_armor to keep the armor-ignoring magic behavior.
