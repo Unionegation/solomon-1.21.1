@@ -2,7 +2,7 @@
 
 A small **Minecraft 1.21.1 / NeoForge** mod. Adds one item, the **Sun Spear**, a Barched-based
 spear that, on a keybind, summons a pillar of sunlight ("sunrip") that deals sustained damage in a
-column. That sun-beam ability is essentially the whole mod.
+column. In addition, adds an entity 'sun dragon'.
 
 ## Stack & versions
 - Minecraft `1.21.1`, NeoForge `21.1.238` (see [gradle.properties](gradle.properties)).
@@ -57,10 +57,14 @@ join it via [data/minecraft/tags/item/spears.json](src/main/resources/data/minec
   dragon gold bodies (translucent) first, then all additive light (beam shells + dragon glows) —
   additive commutes, so nothing can bury light "beneath" a body.
 - **entity/[SunDragon.java](src/main/java/dev/solomon/solomon/entity/SunDragon.java)** — decorative
-  multi-segment Chinese dragon (`solomon:sun_dragon`, spawn egg in the spawn-eggs tab). Server flies
-  the single head entity along a layered-sine curl around its spawn anchor (anchor + `curlTime`
-  persisted in NBT); both sides record a per-tick position ring buffer (`TRAIL_LENGTH = 128`) that
-  `getTrailPoint` samples smoothly.
+  multi-segment Chinese dragon (`solomon:sun_dragon`, spawn egg in the spawn-eggs tab). Server-side
+  movement has two decoupled modes: the default **idle curl** (layered-sine orbit around the spawn
+  anchor; anchor + `curlTime` persisted in NBT) and the **helix attack** (`startHelixAttack`):
+  the head corkscrews around the straight caster→target line (`HELIX_RADIUS`/`HELIX_AXIAL_SPEED`/
+  `HELIX_ANGULAR_SPEED`/`HELIX_RAMP`, all SCALE-derived; radius ramps 0→full→0 so it leaves the
+  caster and converges exactly onto the target), overshoots straight past the target until the tail
+  arrives (`BODY_LENGTH`), then discards itself; helix state persisted in NBT. Both sides record a
+  per-tick position ring buffer (`TRAIL_LENGTH = 256`) that `getTrailPoint` samples smoothly.
 - **client/[SunDragonModel.java](src/main/java/dev/solomon/solomon/client/SunDragonModel.java)** &
   **[SunDragonRenderer.java](src/main/java/dev/solomon/solomon/client/SunDragonRenderer.java)** —
   head + one reusable body-cube part (authored **+Y-up/+Z-forward**, no vanilla model flip); renderer
@@ -84,6 +88,10 @@ join it via [data/minecraft/tags/item/spears.json](src/main/resources/data/minec
   — `CustomPacketPayload` client→server. Server-side `handle` damages living entities in the beam
   column. Owns damage constants (`TOTAL_DAMAGE`, `DAMAGE_PULSES`, `PULSE_INTERVAL_TICKS`,
   `DAMAGE_PER_PULSE`) and the column geometry (`RADIUS`/`BOTTOM`/`HEIGHT`).
+- **network/[SunDragonAttackPayload.java](src/main/java/dev/solomon/solomon/network/SunDragonAttackPayload.java)**
+  — `CustomPacketPayload` client→server for the dragon attack (client `SUN_DRAGON_KEY`, default G,
+  raycasts a target like the beam). Server validates (holding spear, distance sane) and spawns a
+  `SunDragon` at the caster's eyes in helix-attack mode. No damage yet — purely visual.
 - **network/[SunBeamDamageSource.java](src/main/java/dev/solomon/solomon/network/SunBeamDamageSource.java)**
   — `DamageSource` subclass; overrides `getLocalizedDeathMessage` to pick one of three random death
   messages (`death.attack.sunrip.1..3`; `%1$s`=victim, `%2$s`=caster).

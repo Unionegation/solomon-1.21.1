@@ -47,6 +47,17 @@ public class SunDragon extends Mob {
      */
     public static final int TRAIL_LENGTH = 256;
 
+    // Helix-attack path, all SCALE-derived like the curl so the corkscrew stays proportioned to
+    // the body. The dragon flies from its caster along a helix wound around the caster→target
+    // line, spiraling in to hit the target exactly (radius ramps 0→full→0 along the line).
+    public static final double HELIX_RADIUS = 0.9 * SCALE;
+    /** Blocks advanced along the caster→target axis per tick. */
+    public static final double HELIX_AXIAL_SPEED = 0.16 * SCALE;
+    /** Radians swept around the axis per tick. */
+    public static final double HELIX_ANGULAR_SPEED = 0.22;
+    /** Axial distance over which the helix radius ramps in at the caster / out at the target. */
+    public static final double HELIX_RAMP = 2.0 * SCALE;
+
     private final Vec3[] trail = new Vec3[TRAIL_LENGTH];
     /** Index of the newest trail sample, or -1 until the first tick fills the buffer. */
     private int trailHead = -1;
@@ -55,6 +66,13 @@ public class SunDragon extends Mob {
     // and persisted (along with curlTime) so the dragon doesn't jump on chunk reload.
     private Vec3 anchor;
     private int curlTime;
+
+    // Helix-attack state; helixTime < 0 means the dragon is in its idle curl instead. Attack
+    // dragons fly the helix once, overshoot the target far enough for the tail to arrive, then
+    // discard themselves.
+    private Vec3 helixStart;
+    private Vec3 helixTarget;
+    private int helixTime = -1;
 
     public SunDragon(EntityType<? extends SunDragon> type, Level level) {
         super(type, level);
@@ -81,26 +99,93 @@ public class SunDragon extends Mob {
         return new Vec3(radius * Math.cos(angle), y, radius * Math.sin(angle));
     }
 
+    /**
+     * Puts this dragon into helix-attack mode: it flies from {@code start} to {@code target} along
+     * a helix wound around the straight line between them, then discards itself once the tail has
+     * reached the target. Call before adding the entity to the level.
+     */
+    public void startHelixAttack(Vec3 start, Vec3 target) {
+        this.helixStart = start;
+        this.helixTarget = target;
+        this.helixTime = 0;
+        this.setPos(helixPos(0.0));
+    }
+
+    public boolean isHelixAttacking() {
+        return this.helixTime >= 0;
+    }
+
+    /**
+     * Head position at helix time t (in ticks). The path advances along the start→target axis at
+     * {@link #HELIX_AXIAL_SPEED} while sweeping {@link #HELIX_ANGULAR_SPEED} around it; the radius
+     * ramps 0→{@link #HELIX_RADIUS}→0 over {@link #HELIX_RAMP} blocks at each end, so the head
+     * leaves exactly from the start point and converges exactly onto the target. Past the target
+     * the radius stays 0 and the path continues straight along the axis (the overshoot that lets
+     * the body finish arriving).
+     */
+    private Vec3 helixPos(double t) {
+        Vec3 line = this.helixTarget.subtract(this.helixStart);
+        double length = line.length();
+        Vec3 axis = length > 1.0E-4 ? line.scale(1.0 / length) : new Vec3(0.0, -1.0, 0.0);
+        // Radial frame around the axis; fall back when the axis is (near) vertical.
+        Vec3 ref = Math.abs(axis.y) > 0.99 ? new Vec3(1.0, 0.0, 0.0) : new Vec3(0.0, 1.0, 0.0);
+        Vec3 u = axis.cross(ref).normalize();
+        Vec3 v = axis.cross(u);
+
+        double s = t * HELIX_AXIAL_SPEED;
+        double ramp = Math.min(HELIX_RAMP, length / 2.0);
+        double radius = HELIX_RADIUS
+                * Mth.clamp(s / ramp, 0.0, 1.0)
+                * Mth.clamp((length - s) / ramp, 0.0, 1.0);
+        double angle = t * HELIX_ANGULAR_SPEED;
+        return this.helixStart
+                .add(axis.scale(s))
+                .add(u.scale(radius * Math.cos(angle)))
+                .add(v.scale(radius * Math.sin(angle)));
+    }
+
+    private void tickHelixAttack() {
+        this.helixTime++;
+        this.flyTo(helixPos(this.helixTime));
+        // Head is BODY_LENGTH past the target ⇒ the tail has just arrived; the whole overshoot
+        // continues straight along the axis (usually into the terrain the target sits on).
+        if (this.helixTime * HELIX_AXIAL_SPEED > this.helixTarget.distanceTo(this.helixStart) + BODY_LENGTH) {
+            this.discard();
+        }
+    }
+
+    private void tickIdleCurl() {
+        if (this.anchor == null) {
+            // Offset the anchor so the curl at t=0 lands exactly on the spawn position (no first-tick jump).
+            this.anchor = this.position().subtract(curlOffset(0.0));
+        }
+        this.curlTime++;
+        this.flyTo(this.anchor.add(curlOffset(this.curlTime)));
+    }
+
+    /** Moves the head to {@code next} and faces it along the movement direction. */
+    private void flyTo(Vec3 next) {
+        Vec3 delta = next.subtract(this.position());
+        this.setPos(next);
+        this.setDeltaMovement(Vec3.ZERO);
+        if (delta.lengthSqr() > 1.0E-6) {
+            float yaw = (float) (Mth.atan2(delta.x, delta.z) * Mth.RAD_TO_DEG);
+            this.setYRot(yaw);
+            this.yBodyRot = yaw;
+            this.yHeadRot = yaw;
+            this.setXRot((float) (-Mth.atan2(delta.y, delta.horizontalDistance()) * Mth.RAD_TO_DEG));
+        }
+    }
+
     @Override
     public void tick() {
         super.tick();
 
         if (!this.level().isClientSide) {
-            if (this.anchor == null) {
-                // Offset the anchor so the curl at t=0 lands exactly on the spawn position (no first-tick jump).
-                this.anchor = this.position().subtract(curlOffset(0.0));
-            }
-            this.curlTime++;
-            Vec3 next = this.anchor.add(curlOffset(this.curlTime));
-            Vec3 delta = next.subtract(this.position());
-            this.setPos(next);
-            this.setDeltaMovement(Vec3.ZERO);
-            if (delta.lengthSqr() > 1.0E-6) {
-                float yaw = (float) (Mth.atan2(delta.x, delta.z) * Mth.RAD_TO_DEG);
-                this.setYRot(yaw);
-                this.yBodyRot = yaw;
-                this.yHeadRot = yaw;
-                this.setXRot((float) (-Mth.atan2(delta.y, delta.horizontalDistance()) * Mth.RAD_TO_DEG));
+            if (this.isHelixAttacking()) {
+                this.tickHelixAttack();
+            } else {
+                this.tickIdleCurl();
             }
         }
 
@@ -167,6 +252,15 @@ public class SunDragon extends Mob {
             tag.putDouble("AnchorZ", this.anchor.z);
         }
         tag.putInt("CurlTime", this.curlTime);
+        if (this.isHelixAttacking()) {
+            tag.putDouble("HelixStartX", this.helixStart.x);
+            tag.putDouble("HelixStartY", this.helixStart.y);
+            tag.putDouble("HelixStartZ", this.helixStart.z);
+            tag.putDouble("HelixTargetX", this.helixTarget.x);
+            tag.putDouble("HelixTargetY", this.helixTarget.y);
+            tag.putDouble("HelixTargetZ", this.helixTarget.z);
+            tag.putInt("HelixTime", this.helixTime);
+        }
     }
 
     @Override
@@ -176,5 +270,10 @@ public class SunDragon extends Mob {
             this.anchor = new Vec3(tag.getDouble("AnchorX"), tag.getDouble("AnchorY"), tag.getDouble("AnchorZ"));
         }
         this.curlTime = tag.getInt("CurlTime");
+        if (tag.contains("HelixTime")) {
+            this.helixStart = new Vec3(tag.getDouble("HelixStartX"), tag.getDouble("HelixStartY"), tag.getDouble("HelixStartZ"));
+            this.helixTarget = new Vec3(tag.getDouble("HelixTargetX"), tag.getDouble("HelixTargetY"), tag.getDouble("HelixTargetZ"));
+            this.helixTime = tag.getInt("HelixTime");
+        }
     }
 }

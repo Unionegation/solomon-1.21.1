@@ -23,6 +23,7 @@ import net.neoforged.neoforge.common.DeferredSpawnEggItem;
 import net.neoforged.neoforge.common.SimpleTier;
 import dev.solomon.solomon.entity.SunDragon;
 import dev.solomon.solomon.network.SunBeamDamagePayload;
+import dev.solomon.solomon.network.SunDragonAttackPayload;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -100,7 +101,9 @@ public class Solomon {
     }
 
     private void registerPayloads(RegisterPayloadHandlersEvent event) {
-        event.registrar("1").playToServer(SunBeamDamagePayload.TYPE, SunBeamDamagePayload.STREAM_CODEC, SunBeamDamagePayload::handle);
+        event.registrar("1")
+                .playToServer(SunBeamDamagePayload.TYPE, SunBeamDamagePayload.STREAM_CODEC, SunBeamDamagePayload::handle)
+                .playToServer(SunDragonAttackPayload.TYPE, SunDragonAttackPayload.STREAM_CODEC, SunDragonAttackPayload::handle);
     }
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {

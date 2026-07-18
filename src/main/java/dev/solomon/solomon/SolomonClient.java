@@ -12,6 +12,7 @@ import dev.solomon.solomon.client.SunBeamEffect;
 import dev.solomon.solomon.client.SunDragonModel;
 import dev.solomon.solomon.client.SunDragonRenderer;
 import dev.solomon.solomon.entity.SunDragon;
+import dev.solomon.solomon.network.SunDragonAttackPayload;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -30,6 +31,7 @@ import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 // This class will not load on dedicated servers. Accessing client side code from here is safe.
 @Mod(value = Solomon.MODID, dist = Dist.CLIENT)
@@ -46,6 +48,8 @@ public class SolomonClient {
 
     public static final KeyMapping SUN_BEAM_KEY = new KeyMapping(
             "key.solomon.sun_beam", InputConstants.KEY_R, "key.categories.solomon");
+    public static final KeyMapping SUN_DRAGON_KEY = new KeyMapping(
+            "key.solomon.sun_dragon_attack", InputConstants.KEY_G, "key.categories.solomon");
 
     /** Set in the constructor; lets the LevelRendererMixin depth-capture hook reach the instance. */
     private static SolomonClient instance;
@@ -72,6 +76,7 @@ public class SolomonClient {
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {
         event.register(SUN_BEAM_KEY);
+        event.register(SUN_DRAGON_KEY);
     }
 
     private void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {
@@ -112,6 +117,15 @@ public class SolomonClient {
             });
         }
         this.beamKeyWasDown = down;
+
+        // Dragon attack is fire-and-forget: raycast a target the same way the beam does and let
+        // the server spawn the helix-flying dragon (it syncs back like any entity).
+        while (SUN_DRAGON_KEY.consumeClick()) {
+            if (minecraft.player.isHolding(Solomon.SUN_SPEAR.get())) {
+                Vec3 target = minecraft.player.pick(SUN_BEAM_RANGE, 1.0F, false).getLocation();
+                PacketDistributor.sendToServer(new SunDragonAttackPayload(target));
+            }
+        }
     }
 
     /**
