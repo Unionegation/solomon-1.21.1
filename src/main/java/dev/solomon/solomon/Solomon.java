@@ -62,6 +62,11 @@ public class Solomon {
     public static final DeferredHolder<SoundEvent, SoundEvent> SUN_DRAGON_LAUNCH_SOUND = SOUND_EVENTS.register("sundragonlaunch",
             () -> SoundEvent.createVariableRangeEvent(ResourceLocation.fromNamespaceAndPath(MODID, "sundragonlaunch")));
 
+    // Looping ambience attached to each sun dragon; started client-side (SolomonClient) when the
+    // dragon enters tracking range and stopped by the sound instance itself when it despawns.
+    public static final DeferredHolder<SoundEvent, SoundEvent> SUN_DRAGON_AMBIENT_SOUND = SOUND_EVENTS.register("sundragonambient",
+            () -> SoundEvent.createVariableRangeEvent(ResourceLocation.fromNamespaceAndPath(MODID, "sundragonambient")));
+
     // Custom damage type for the sun beam, defined by the datapack file data/solomon/damage_type/sunrip.json.
     // It replaces the old indirectMagic source so the sunrip can carry its own death messages
     // (see SunBeamDamageSource); it is tagged bypasses_armor to keep the armor-ignoring magic behavior.

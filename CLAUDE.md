@@ -150,7 +150,10 @@ server spawns and flies the entity).
 - `assets/solomon/` — `lang/en_us.json`, item models (`sun_spear`, `sun_spear_in_hand`,
   `sun_dragon_spawn_egg`), textures (incl. procedurally generated
   `textures/entity/sun_dragon.png` gold-scale skin), `sounds.json` + `sounds/sunrip.ogg` +
-  `sounds/sundragonlaunch.ogg` (played server-side at the caster on dragon launch).
+  `sounds/sundragonlaunch.ogg` (played server-side at the caster on dragon launch) +
+  `sounds/ambientsundrag.ogg` (quiet loop following every dragon: client-side
+  `SunDragonAmbientSound`, started by SolomonClient on `EntityJoinLevelEvent`, stops itself when
+  the dragon is removed).
 - `data/solomon/damage_type/sunrip.json` — the custom damage type.
 - `data/minecraft/tags/damage_type/{bypasses_cooldown,bypasses_armor,no_knockback}.json` — merge
   `solomon:sunrip` into vanilla tags (`replace:false`).

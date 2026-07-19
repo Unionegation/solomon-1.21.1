@@ -9,6 +9,7 @@ import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.solomon.solomon.client.SunBeamEffect;
+import dev.solomon.solomon.client.SunDragonAmbientSound;
 import dev.solomon.solomon.client.SunDragonModel;
 import dev.solomon.solomon.client.SunDragonRenderer;
 import dev.solomon.solomon.entity.SunDragon;
@@ -31,6 +32,7 @@ import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 // This class will not load on dedicated servers. Accessing client side code from here is safe.
@@ -72,6 +74,18 @@ public class SolomonClient {
         modEventBus.addListener(this::registerLayerDefinitions);
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
         NeoForge.EVENT_BUS.addListener(this::onRenderLevelStage);
+        NeoForge.EVENT_BUS.addListener(this::onEntityJoinLevel);
+    }
+
+    /**
+     * Fires each time a sun dragon enters this client's view (spawn or re-entering tracking
+     * range); attaches the looping ambient hum, which follows the head and stops itself when the
+     * dragon despawns or is removed from the client level.
+     */
+    private void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (event.getLevel().isClientSide && event.getEntity() instanceof SunDragon dragon) {
+            Minecraft.getInstance().getSoundManager().play(new SunDragonAmbientSound(dragon));
+        }
     }
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {

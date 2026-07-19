@@ -14,5 +14,13 @@
         "name": "solomon:sundragonlaunch"
       }
     ]
+  },
+  "sundragonambient": {
+    "subtitle": "solomon.subtitle.sundragonambient",
+    "sounds": [
+      {
+        "name": "solomon:ambientsundrag"
+      }
+    ]
   }
 }
