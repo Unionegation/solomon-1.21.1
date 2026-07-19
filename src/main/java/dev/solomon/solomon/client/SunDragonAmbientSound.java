@@ -36,6 +36,8 @@ public class SunDragonAmbientSound extends AbstractTickableSoundInstance {
             this.stop();
             return;
         }
+        // Track the despawn fade so the loop dims out with the body instead of cutting off.
+        this.volume = VOLUME * this.dragon.getFadeAlpha(0.0F);
         this.x = this.dragon.getX();
         this.y = this.dragon.getY();
         this.z = this.dragon.getZ();

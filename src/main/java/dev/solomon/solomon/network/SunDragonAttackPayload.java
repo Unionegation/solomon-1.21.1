@@ -14,8 +14,9 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * Sent by the client when the sun-dragon attack keybind fires. The server spawns a {@link SunDragon}
- * at the caster's eyes in helix-attack mode: it corkscrews around the caster→target line, converges
- * onto the target, and discards itself once its tail has arrived. Purely visual for now — no damage.
+ * behind and beside the caster in helix-attack mode: it sweeps past the caster to a point in front
+ * of them, corkscrews around the line from there to the target, converges onto the target, and
+ * discards itself once its tail has arrived. Purely visual for now — no damage.
  */
 public record SunDragonAttackPayload(Vec3 target) implements CustomPacketPayload {
 

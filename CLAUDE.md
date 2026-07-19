@@ -61,10 +61,20 @@ join it via [data/minecraft/tags/item/spears.json](src/main/resources/data/minec
   multi-segment Chinese dragon (`solomon:sun_dragon`, spawn egg in the spawn-eggs tab). Server-side
   movement has two decoupled modes: the default **idle curl** (layered-sine orbit around the spawn
   anchor; anchor + `curlTime` persisted in NBT) and the **helix attack** (`startHelixAttack`):
-  the head corkscrews around the straight caster→target line (`HELIX_RADIUS`/`HELIX_AXIAL_SPEED`/
-  `HELIX_ANGULAR_SPEED`/`HELIX_RAMP`, all SCALE-derived; radius ramps 0→full→0 so it leaves the
-  caster and converges exactly onto the target), overshoots straight past the target until the tail
-  arrives (`BODY_LENGTH`), then discards itself; helix state persisted in NBT. The client records a
+  the dragon spawns behind and to the caster's right (`INTRO_BEHIND`/`INTRO_SIDE`, so the body
+  doesn't materialize in the caster's face), sweeps a quadratic Bezier past the caster's side to a
+  point `INTRO_FRONT` ahead of them (clamped to half the target distance), then the head corkscrews
+  around the straight front-point→target line (`HELIX_RADIUS`/`HELIX_WIND_RATE`/`HELIX_RAMP`, all
+  SCALE-derived; radius ramps 0→full→0 so it leaves the front point and converges exactly onto the
+  target), overshoots straight past the target until the tail arrives (`BODY_LENGTH`), then keeps flying
+  straight while it **fades out** over `FADE_TICKS` (server flips the synced `DATA_FADING` flag,
+  both sides count `fadeTime`, server discards at the end; `getFadeAlpha(partialTick)` drives the
+  renderer's body/glow alpha and the ambient loop's volume) instead of popping; helix + intro +
+  fade state persisted in NBT. The helix is parametrized by **axial
+  distance** and stepped by arc length each tick (finite-difference `|dP/ds|`), so the head moves
+  at a constant `HELIX_SPEED` throughout — no slowdown at the radius ramps. Knobs: `HELIX_SPEED`
+  (duration), `HELIX_WIND_RATE` (radians per axial block — winds are tied to distance, not time),
+  `HELIX_RADIUS`; radius × wind rate = circling:forward speed ratio at full radius. The client records a
   per-tick position ring buffer (`TRAIL_LENGTH = 256`) that `getTrailPoint` samples smoothly (the
   server never reads the trail, so it skips the bookkeeping).
 - **client/[SunDragonModel.java](src/main/java/dev/solomon/solomon/client/SunDragonModel.java)** &

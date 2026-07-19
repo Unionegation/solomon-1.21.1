@@ -99,6 +99,10 @@ public class SunDragonRenderer extends EntityRenderer<SunDragon> {
      * that batch (for every dragon at once) before any additive pass is buffered.
      */
     public void renderBody(SunDragon dragon, PoseStack poseStack, Vec3 cameraPos, float partialTick) {
+        float fade = dragon.getFadeAlpha(partialTick);
+        if (fade <= 0.0F) {
+            return;
+        }
         Layout layout = this.computeLayout(dragon, partialTick);
         QuadsToTriangles buffer = new QuadsToTriangles(
                 Minecraft.getInstance().renderBuffers().bufferSource().getBuffer(DragonRenderTypes.SUN_DRAGON_BODY));
@@ -106,7 +110,7 @@ public class SunDragonRenderer extends EntityRenderer<SunDragon> {
         poseStack.translate(layout.headPos.x - cameraPos.x, layout.headPos.y - cameraPos.y,
                 layout.headPos.z - cameraPos.z);
         for (Placement p : layout.placements) {
-            renderSegment(poseStack, buffer, p, BASE_PASS);
+            renderSegment(poseStack, buffer, p, BASE_PASS, fade);
         }
         poseStack.popPose();
     }
@@ -116,6 +120,10 @@ public class SunDragonRenderer extends EntityRenderer<SunDragon> {
      * sunrip's shells; the caller flushes that batch after every dragon and beam has buffered.
      */
     public void renderGlow(SunDragon dragon, PoseStack poseStack, Vec3 cameraPos, float partialTick) {
+        float fade = dragon.getFadeAlpha(partialTick);
+        if (fade <= 0.0F) {
+            return;
+        }
         Layout layout = this.computeLayout(dragon, partialTick);
         QuadsToTriangles buffer = new QuadsToTriangles(
                 Minecraft.getInstance().renderBuffers().bufferSource().getBuffer(RenderType.dragonRays()));
@@ -124,7 +132,7 @@ public class SunDragonRenderer extends EntityRenderer<SunDragon> {
                 layout.headPos.z - cameraPos.z);
         for (GlowPass pass : GLOW_PASSES) {
             for (Placement p : layout.placements) {
-                renderSegment(poseStack, buffer, p, pass);
+                renderSegment(poseStack, buffer, p, pass, fade);
             }
         }
         poseStack.popPose();
@@ -164,9 +172,11 @@ public class SunDragonRenderer extends EntityRenderer<SunDragon> {
     }
 
     private static void renderSegment(PoseStack poseStack, QuadsToTriangles buffer, Placement placement,
-            GlowPass pass) {
-        // The body dims toward the tail, echoing the beam's fade-to-nothing gradient.
-        float alpha = Math.min(1.0F, pass.alpha * (0.45F + 0.55F * placement.taper));
+            GlowPass pass, float fade) {
+        // The body dims toward the tail, echoing the beam's fade-to-nothing gradient; both the
+        // alpha-blended body and the additive glow (dragonRays blends SRC_ALPHA, ONE) scale with
+        // the despawn fade, so the whole dragon dims out together.
+        float alpha = Math.min(1.0F, pass.alpha * (0.45F + 0.55F * placement.taper)) * fade;
         int color = FastColor.ARGB32.color((int) (alpha * 255.0F), (int) (pass.red * 255.0F),
                 (int) (pass.green * 255.0F), (int) (pass.blue * 255.0F));
         float crossScale = MODEL_SCALE * placement.taper * pass.width;
